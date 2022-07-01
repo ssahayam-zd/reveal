@@ -1,17 +1,20 @@
 use walkdir::{DirEntry, WalkDir};
-use std::io::Write;
-use std::process::Command;
-use std::fs;
 use model::*;
+use tokio::task;
+use tokio::process::Command;
+use tokio::io::AsyncWriteExt;
+use futures::future::try_join_all;
 
 mod model;
 
-type R<T> = Result<T, Box<dyn std::error::Error>>;
+type AsynError = Box::<dyn std::error::Error + Send + Sync>;
+type R<T> = Result<T, AsynError>;
 
 const SUCCESS: &str = "success";
 const FAILURE: &str = "failed";
 
-fn main() -> R<()> {
+#[tokio::main]
+async fn main() -> R<()> {
 
   //TODO: Accept these params
   let working_dir = "/Users/sanjiv.sahayam/ziptemp/tmp-proto/7.273.0-4dd7dac3-SNAPSHOT";
@@ -20,29 +23,38 @@ fn main() -> R<()> {
   walk_tree(
   WorkingDir::new(working_dir), 
   TargetDir::new(target_dir)
-  )
+  ).await?;
+
+  Ok(())
 }
 
-fn walk_tree(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
-  let results: Result<Vec<()>, Box<dyn std::error::Error>> = 
+async fn walk_tree(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
+  let async_results: Vec<task::JoinHandle<_>> = 
     WalkDir::new(working_dir.clone())
       .into_iter()
       .filter_map(|e| e.ok())
       .filter(is_valid_file)
       .map(|entry|{
-        let scalap_args = get_scalap_args(entry, &working_dir, &target_dir)?;     
-        decompile_class(scalap_args)
+        // Each closure instance needs its own "owned" copies of these variables
+        let working_dir_new = working_dir.clone();
+        let target_dir_new = target_dir.clone();
+        tokio::spawn(async move {
+          let scalap_args = get_scalap_args(entry.clone(), working_dir_new, target_dir_new)?;     
+          decompile_class(scalap_args).await
+        })
       }).collect();
 
-
-  results.map(|_| ())
+  match try_join_all(async_results).await {
+    Ok(_) => Ok(()),
+    Err(e) => Err(raise_error(&format!("error getting results: {:?}", e))), 
+  }
 }
 
-fn get_scalap_args(entry: DirEntry, working_dir: &WorkingDir, target_dir: &TargetDir) -> R<ScalapArguments> {
+fn get_scalap_args(entry: DirEntry, working_dir: WorkingDir, target_dir: TargetDir) -> R<ScalapArguments> {
     let p = entry.path();
     let class_name = p.file_name().ok_or(raise_error("Could not get file name"))?.to_string_lossy().replace(".class", "");
     let parent_path = p.parent().ok_or(raise_error("no parent dir"))?.to_string_lossy();
-    let (_, relative_dir) = parent_path.split_once(working_dir.to_string_lossy().as_str()).ok_or("can't detect relative dir")?;    
+    let (_, relative_dir) = parent_path.split_once(&working_dir.to_string_lossy().as_str()).ok_or("can't detect relative dir")?;    
     let relative_parent_path = relative_dir.strip_prefix("/").unwrap_or(relative_dir);
     let parent_dotted_path = relative_parent_path.replace("/", ".");
 
@@ -58,11 +70,11 @@ fn get_scalap_args(entry: DirEntry, working_dir: &WorkingDir, target_dir: &Targe
     Ok(result)
 }
 
-fn raise_error(message: &str) -> Box::<dyn std::error::Error> {
-  Box::<dyn std::error::Error>::from(message)
+fn raise_error(message: &str) -> AsynError {
+  AsynError::from(message)
 }
 
-fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
+async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
   let parent_dotted_path = scalap_args.parent_dotted_path;
   let relative_parent_path = scalap_args.parent_relative_path;
   let class_name = scalap_args.class_name;
@@ -74,7 +86,7 @@ fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
   let target_scala_file = format!("{}/{}.scala", output_dir.clone().to_string_lossy(), class_name.value());
 
   if !output_dir.is_dir() {
-    fs::create_dir_all(output_dir.clone())?
+    tokio::fs::create_dir_all(output_dir.clone()).await?
   }
 
   // println!("scalap {} > {}", dotted_scala_file, target_scala_file);
@@ -85,10 +97,11 @@ fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
     Command::new("scalap")
     .current_dir(working_dir)
     .arg(dotted_scala_file)
-    .output()?;
+    .output()
+    .await?;
 
-    let mut output_file = fs::File::create(target_scala_file)?;
-    output_file.write_all(&output.stdout)?;
+    let mut output_file = tokio::fs::File::create(target_scala_file).await?;
+    output_file.write_all(&output.stdout).await?;
 
     let result = 
       if output.status.success() {
