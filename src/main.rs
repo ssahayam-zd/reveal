@@ -1,8 +1,10 @@
 use walkdir::{DirEntry, WalkDir};
 use std::io::Write;
-use std::path::{PathBuf, Path};
 use std::process::Command;
 use std::fs;
+use model::*;
+
+mod model;
 
 type R<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -13,14 +15,14 @@ fn main() -> R<()> {
   let target_dir = "/Users/sanjiv.sahayam/ziptemp/tmp-proto/7.273.0-4dd7dac3-SNAPSHOT-output2";
 
   walk_tree(
-  WorkingDir(Path::new(working_dir).to_path_buf()), 
-  TargetDir(Path::new(target_dir).to_path_buf())
+  WorkingDir::new(working_dir), 
+  TargetDir::new(target_dir)
   )
 }
 
 fn walk_tree(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
   let results: Result<Vec<()>, Box<dyn std::error::Error>> = 
-    WalkDir::new(working_dir.clone().0)
+    WalkDir::new(working_dir.clone())
       .into_iter()
       .filter_map(|e| e.ok())
       .filter(is_valid_file)
@@ -28,13 +30,14 @@ fn walk_tree(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
         let p = entry.path();
         let class_name = p.file_name().ok_or(raise_error("Could not get file name"))?.to_string_lossy().replace(".class", "");
         let parent_path = p.parent().ok_or(raise_error("no parent dir"))?.to_string_lossy();
-        let (_, relative_dir) = (*parent_path).split_once(working_dir.0.to_string_lossy().as_ref()).ok_or("can't detect relative dir")?;    
+        let (_, relative_dir) = parent_path.split_once(&working_dir.to_string_lossy()).ok_or("can't detect relative dir")?;    
         let relative_parent_path = relative_dir.strip_prefix("/").unwrap_or(relative_dir);
         let parent_dotted_path = relative_parent_path.replace("/", ".");
+       
         decompile_class(
-          ParentDottedPath(parent_dotted_path),
-          ParentRelativePath(relative_parent_path.to_owned()),
-          ClassName(class_name),
+          ParentDottedPath::new(parent_dotted_path.as_ref()),
+          ParentRelativePath::new(relative_parent_path),
+          ClassName::new(class_name.as_ref()),
           working_dir.clone(),
           target_dir.clone()
         )
@@ -48,20 +51,10 @@ fn raise_error(message: &str) -> Box::<dyn std::error::Error> {
   Box::<dyn std::error::Error>::from(message)
 }
 
-struct ParentDottedPath(String);
-struct ParentRelativePath(String);
-struct ClassName(String);
-
-#[derive(Clone)]
-struct WorkingDir(PathBuf);
-
-#[derive(Clone)]
-struct TargetDir(PathBuf);
-
 fn decompile_class(parent_dotted_path: ParentDottedPath, relative_parent_path: ParentRelativePath, class_name: ClassName, working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
-  let output_dir = target_dir.0.join(relative_parent_path.0);
-  let dotted_scala_file = format!("{}.{}", parent_dotted_path.0, class_name.0);
-  let target_scala_file = format!("{}/{}.scala", output_dir.clone().to_string_lossy(), class_name.0);
+  let output_dir = target_dir.join(relative_parent_path.value());
+  let dotted_scala_file = format!("{}.{}", parent_dotted_path.value(), class_name.value());
+  let target_scala_file = format!("{}/{}.scala", output_dir.clone().to_string_lossy(), class_name.value());
 
   if !output_dir.is_dir() {
     fs::create_dir_all(output_dir.clone())?
@@ -73,7 +66,7 @@ fn decompile_class(parent_dotted_path: ParentDottedPath, relative_parent_path: P
 
   let output = 
     Command::new("scalap")
-    .current_dir(working_dir.0)
+    .current_dir(working_dir)
     .arg(dotted_scala_file)
     .output()?;
 
