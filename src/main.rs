@@ -10,8 +10,8 @@ mod model;
 type AsynError = Box::<dyn std::error::Error + Send + Sync>;
 type R<T> = Result<T, AsynError>;
 
-const SUCCESS: &str = "success";
-const FAILURE: &str = "failed";
+const SUCCESS: &str = "✅";
+const FAILURE: &str = "☠️";
 
 #[tokio::main]
 async fn main() -> R<()> {
@@ -89,7 +89,7 @@ async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
     tokio::fs::create_dir_all(output_dir.clone()).await?
   }
 
-  // println!("scalap {} > {}", dotted_scala_file, target_scala_file);
+  println!("decompile: {}", dotted_scala_file.clone());
   // println!("###> {}", output_dir.clone().to_string_lossy());
 
   let output = 
@@ -99,19 +99,20 @@ async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
     .output()
     .await?;
 
-    let mut output_file = tokio::fs::File::create(target_scala_file).await?;
-    output_file.write_all(&output.stdout).await?;
+  println!("writing: {}", target_scala_file.clone());
 
-    let result = 
-      if output.status.success() {
-        SUCCESS
-      } else {
-        FAILURE
-      };
+  let mut output_file = tokio::fs::File::create(target_scala_file).await?;
+  output_file.write_all(&output.stdout).await?;
 
-    let outcome = format!("writing: {} -> {}", dotted_scala_file.clone(), result);
+  let result = 
+    if output.status.success() {
+      SUCCESS
+    } else {
+      FAILURE
+    };
 
-    println!("{}", outcome);
+
+  println!("{} {}", result, dotted_scala_file.clone());
 
     Ok(())
 }
@@ -119,19 +120,19 @@ async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
 fn is_valid_file(entry: &DirEntry) -> bool {
   let is_dir = entry.file_type().is_dir();
 
-  let is_nested_class = 
+  let is_class = 
     if entry.file_type().is_file() {
       let file_name_has_dollar = 
         entry
           .path()
           .file_name()
           .map(|os_str| os_str.to_string_lossy())
-          .and_then(|s| s.rfind("$"));
+          .and_then(|s| s.rfind(".class"));
       
       file_name_has_dollar.map_or(false, |_| true)
     } else {
       false //not a nested class if it's not a file
     };
 
-    !(is_dir || is_nested_class)
+    !is_dir && is_class
 }
