@@ -8,6 +8,9 @@ mod model;
 
 type R<T> = Result<T, Box<dyn std::error::Error>>;
 
+const SUCCESS: &str = "success";
+const FAILURE: &str = "failed";
+
 fn main() -> R<()> {
 
   //TODO: Accept these params
@@ -27,31 +30,45 @@ fn walk_tree(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
       .filter_map(|e| e.ok())
       .filter(is_valid_file)
       .map(|entry|{
-        let p = entry.path();
-        let class_name = p.file_name().ok_or(raise_error("Could not get file name"))?.to_string_lossy().replace(".class", "");
-        let parent_path = p.parent().ok_or(raise_error("no parent dir"))?.to_string_lossy();
-        let (_, relative_dir) = parent_path.split_once(&working_dir.to_string_lossy()).ok_or("can't detect relative dir")?;    
-        let relative_parent_path = relative_dir.strip_prefix("/").unwrap_or(relative_dir);
-        let parent_dotted_path = relative_parent_path.replace("/", ".");
-       
-        decompile_class(
-          ParentDottedPath::new(parent_dotted_path.as_ref()),
-          ParentRelativePath::new(relative_parent_path),
-          ClassName::new(class_name.as_ref()),
-          working_dir.clone(),
-          target_dir.clone()
-        )
+        let scalap_args = get_scalap_args(entry, &working_dir, &target_dir)?;     
+        decompile_class(scalap_args)
       }).collect();
 
 
   results.map(|_| ())
 }
 
+fn get_scalap_args(entry: DirEntry, working_dir: &WorkingDir, target_dir: &TargetDir) -> R<ScalapArguments> {
+    let p = entry.path();
+    let class_name = p.file_name().ok_or(raise_error("Could not get file name"))?.to_string_lossy().replace(".class", "");
+    let parent_path = p.parent().ok_or(raise_error("no parent dir"))?.to_string_lossy();
+    let (_, relative_dir) = parent_path.split_once(working_dir.to_string_lossy().as_str()).ok_or("can't detect relative dir")?;    
+    let relative_parent_path = relative_dir.strip_prefix("/").unwrap_or(relative_dir);
+    let parent_dotted_path = relative_parent_path.replace("/", ".");
+
+    let result =
+      ScalapArguments {
+        parent_dotted_path: ParentDottedPath::new(parent_dotted_path.as_ref()),
+        parent_relative_path: ParentRelativePath::new(relative_parent_path),
+        class_name: ClassName::new(class_name.as_ref()),
+        working_dir: working_dir.clone(),
+        target_dir: target_dir.clone()
+      };
+
+    Ok(result)
+}
+
 fn raise_error(message: &str) -> Box::<dyn std::error::Error> {
   Box::<dyn std::error::Error>::from(message)
 }
 
-fn decompile_class(parent_dotted_path: ParentDottedPath, relative_parent_path: ParentRelativePath, class_name: ClassName, working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
+fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
+  let parent_dotted_path = scalap_args.parent_dotted_path;
+  let relative_parent_path = scalap_args.parent_relative_path;
+  let class_name = scalap_args.class_name;
+  let working_dir = scalap_args.working_dir;
+  let target_dir = scalap_args.target_dir;
+ 
   let output_dir = target_dir.join(relative_parent_path.value());
   let dotted_scala_file = format!("{}.{}", parent_dotted_path.value(), class_name.value());
   let target_scala_file = format!("{}/{}.scala", output_dir.clone().to_string_lossy(), class_name.value());
@@ -62,7 +79,7 @@ fn decompile_class(parent_dotted_path: ParentDottedPath, relative_parent_path: P
 
   // println!("scalap {} > {}", dotted_scala_file, target_scala_file);
   // println!("###> {}", output_dir.clone().to_string_lossy());
-  println!("writing {}", dotted_scala_file);
+  print!("writing: {} -> ", dotted_scala_file);
 
   let output = 
     Command::new("scalap")
@@ -73,7 +90,15 @@ fn decompile_class(parent_dotted_path: ParentDottedPath, relative_parent_path: P
     let mut output_file = fs::File::create(target_scala_file)?;
     output_file.write_all(&output.stdout)?;
 
-    println!("{}", output.status);
+    let result = 
+      if output.status.success() {
+        SUCCESS
+      } else {
+        FAILURE
+      };
+
+    print!("{}", result);
+    println!();
 
     Ok(())
 }

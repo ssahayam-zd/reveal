@@ -1,4 +1,4 @@
-use std::{path::{Path, PathBuf}};
+use std::path::{Path, PathBuf};
 
 pub struct ParentDottedPath(String);
 
@@ -86,3 +86,13 @@ impl TargetDir {
     self.0.is_dir()
   }
 }
+
+pub struct ScalapArguments {
+  pub parent_dotted_path: ParentDottedPath,
+  pub parent_relative_path: ParentRelativePath,
+  pub class_name: ClassName,
+  pub working_dir: WorkingDir,
+  pub target_dir: TargetDir
+}
+
+
