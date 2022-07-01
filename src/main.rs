@@ -91,12 +91,11 @@ async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
 
   // println!("scalap {} > {}", dotted_scala_file, target_scala_file);
   // println!("###> {}", output_dir.clone().to_string_lossy());
-  print!("writing: {} -> ", dotted_scala_file);
 
   let output = 
     Command::new("scalap")
     .current_dir(working_dir)
-    .arg(dotted_scala_file)
+    .arg(dotted_scala_file.clone())
     .output()
     .await?;
 
@@ -110,8 +109,9 @@ async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
         FAILURE
       };
 
-    print!("{}", result);
-    println!();
+    let outcome = format!("writing: {} -> {}", dotted_scala_file.clone(), result);
+
+    println!("{}", outcome);
 
     Ok(())
 }
