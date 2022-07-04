@@ -1,9 +1,8 @@
 use walkdir::{DirEntry, WalkDir};
 use model::*;
-use tokio::task;
-use tokio::process::Command;
-use tokio::io::AsyncWriteExt;
-use futures::future::try_join_all;
+use std::fs;
+use std::io::Write;
+use std::process::Command;
 
 mod model;
 
@@ -13,23 +12,23 @@ type R<T> = Result<T, AsynError>;
 const SUCCESS: &str = "✅";
 const FAILURE: &str = "☠️";
 
-#[tokio::main]
-async fn main() -> R<()> {
+fn main() -> R<()> {
 
   //TODO: Accept these params
-  let working_dir = "/Users/sanjiv.sahayam/ziptemp/tmp-proto/7.273.0-4dd7dac3-SNAPSHOT";
-  let target_dir = "/Users/sanjiv.sahayam/ziptemp/tmp-proto/7.273.0-4dd7dac3-SNAPSHOT-output2";
+  let version = "7.273.0";
+  let working_dir = &format!("/Users/sanjiv.sahayam/ziptemp/tmp-proto/{}-input", &version);
+  let target_dir = &format!("/Users/sanjiv.sahayam/ziptemp/tmp-proto/{}-output", &version);
 
   walk_tree(
   WorkingDir::new(working_dir), 
   TargetDir::new(target_dir)
-  ).await?;
+  )?;
 
   Ok(())
 }
 
-async fn walk_tree(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
-  let async_results: Vec<task::JoinHandle<_>> = 
+fn walk_tree(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
+  let async_results: Vec<_> = 
     WalkDir::new(working_dir.clone())
       .into_iter()
       .filter_map(|e| e.ok())
@@ -38,14 +37,18 @@ async fn walk_tree(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
         // Each closure instance needs its own "owned" copies of these variables
         let working_dir_new = working_dir.clone();
         let target_dir_new = target_dir.clone();
-        tokio::spawn(async move {
-          let scalap_args = get_scalap_args(entry.clone(), working_dir_new, target_dir_new)?;     
-          decompile_class(scalap_args).await
-        })
+        // tokio::spawn(async move {
+        let scalap_args = get_scalap_args(entry.clone(), working_dir_new, target_dir_new)?;     
+        decompile_class(scalap_args)
+        // })
       }).collect();
 
-  match try_join_all(async_results).await {
-    Ok(_) => Ok(()),
+  let x: Result<Vec<_>, AsynError> = async_results.into_iter().collect();
+  match x {
+    Ok(results) => {
+      println!("successes ========================> {}", results.len());
+      Ok(())
+    },
     Err(e) => Err(raise_error(&format!("error getting results: {:?}", e))), 
   }
 }
@@ -74,7 +77,7 @@ fn raise_error(message: &str) -> AsynError {
   AsynError::from(message)
 }
 
-async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
+fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
   let parent_dotted_path = scalap_args.parent_dotted_path;
   let relative_parent_path = scalap_args.parent_relative_path;
   let class_name = scalap_args.class_name;
@@ -86,7 +89,7 @@ async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
   let target_scala_file = format!("{}/{}.scala", output_dir.clone().to_string_lossy(), class_name.value());
 
   if !output_dir.is_dir() {
-    tokio::fs::create_dir_all(output_dir.clone()).await?
+    fs::create_dir_all(output_dir.clone())?
   }
 
   println!("decompile: {}", dotted_scala_file.clone());
@@ -96,13 +99,12 @@ async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
     Command::new("scalap")
     .current_dir(working_dir)
     .arg(dotted_scala_file.clone())
-    .output()
-    .await?;
+    .output()?;
 
   println!("writing: {}", target_scala_file.clone());
 
-  let mut output_file = tokio::fs::File::create(target_scala_file).await?;
-  output_file.write_all(&output.stdout).await?;
+  let mut output_file = fs::File::create(target_scala_file)?;
+  output_file.write_all(&output.stdout)?;
 
   let result = 
     if output.status.success() {
