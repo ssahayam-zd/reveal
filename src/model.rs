@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+#[derive(Clone)]
 pub struct ParentDottedPath(String);
 
 impl ParentDottedPath {
@@ -13,7 +14,7 @@ impl ParentDottedPath {
 
 }
 
-
+#[derive(Clone)]
 pub struct ParentRelativePath(PathBuf);
 
 impl ParentRelativePath {
@@ -26,7 +27,7 @@ impl ParentRelativePath {
   }
 }
 
-
+#[derive(Clone)]
 pub struct ClassName(String);
 
 impl ClassName {
@@ -87,6 +88,7 @@ impl TargetDir {
   }
 }
 
+#[derive(Clone)]
 pub struct ScalapArguments {
   pub parent_dotted_path: ParentDottedPath,
   pub parent_relative_path: ParentRelativePath,
