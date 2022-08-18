@@ -8,6 +8,7 @@ type R<T> = Result<T, AsynError>;
 
 const SUCCESS: &str = "✅";
 const FAILURE: &str = "☠️";
+const PARALLELISM: usize = 50;
 
 #[tokio::main]
 async fn main() -> R<()> {
@@ -73,7 +74,7 @@ async fn walk_tree2(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
     Ok(results) => {
       let chunked_results: Vec<Vec<ScalapArguments>> =
         results
-          .chunks(10)
+          .chunks(PARALLELISM)
           .map(|c| c.to_vec())
           .collect();
 
