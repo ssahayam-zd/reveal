@@ -11,17 +11,17 @@ const SUCCESS: &str = "✅";
 const FAILURE: &str = "☠️";
 const PARALLELISM: usize = 50;
 
-
+/// Converts scala class files into the matching scala source files
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
 
   #[arg(short, long)]
-  /// The directory with the protobuf schema class files
-  schema_dir: String,
+  /// The directory with the Scala class files
+  classes_dir: String,
 
   #[arg(short, long)]
-  /// The directory that will contain the generated scala source files for the schema
+  /// The directory that will contain the generated Scala source files
   output_dir: String,
 }
 
@@ -29,7 +29,7 @@ struct Args {
 async fn main() -> R<()> {
   let args = Args::parse();
 
-  let working_dir = WorkingDir::new(&args.schema_dir);
+  let working_dir = WorkingDir::new(&args.classes_dir);
   let target_dir = TargetDir::new(&args.output_dir);
 
   walk_tree2(
