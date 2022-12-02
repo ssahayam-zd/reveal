@@ -1,5 +1,6 @@
 use walkdir::{DirEntry, WalkDir};
 use model::*;
+use clap::Parser;
 
 mod model;
 
@@ -10,52 +11,32 @@ const SUCCESS: &str = "✅";
 const FAILURE: &str = "☠️";
 const PARALLELISM: usize = 50;
 
-#[tokio::main]
-async fn main() -> R<()> {
 
-  //TODO: Accept these params
-  let version = "7.273.0";
-  let working_dir = &format!("/Users/sanjiv.sahayam/ziptemp/tmp-proto/{}-input", &version);
-  let target_dir = &format!("/Users/sanjiv.sahayam/ziptemp/tmp-proto/{}-output", &version);
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
 
-  // walk_tree(
-  // WorkingDir::new(working_dir), 
-  // TargetDir::new(target_dir)
-  // )?;
+  #[arg(short, long)]
+  /// The directory with the protobuf schema class files
+  schema_dir: String,
 
-  walk_tree2(
-  WorkingDir::new(working_dir), 
-  TargetDir::new(target_dir)
-  ).await
-
-  // Ok(())
+  #[arg(short, long)]
+  /// The directory that will contain the generated scala source files for the schema
+  output_dir: String,
 }
 
-// fn walk_tree(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
-//   let maybe_results: Vec<_> = 
-//     WalkDir::new(working_dir.clone())
-//       .into_iter()
-//       .filter_map(|e| e.ok())
-//       .filter(is_valid_file)
-//       .map(|entry|{
-//         // Each closure instance needs its own "owned" copies of these variables
-//         let working_dir_new = working_dir.clone();
-//         let target_dir_new = target_dir.clone();
-//         // tokio::spawn(async move {
-//         let scalap_args = get_scalap_args(entry.clone(), working_dir_new, target_dir_new)?;     
-//         decompile_class(scalap_args)
-//         // })
-//       }).collect();
+#[tokio::main]
+async fn main() -> R<()> {
+  let args = Args::parse();
 
-//   let results: Result<Vec<_>, AsynError> = maybe_results.into_iter().collect();
-//   match results {
-//     Ok(r) => {
-//       println!("successes ========================> {}", r.len());
-//       Ok(())
-//     },
-//     Err(e) => Err(raise_error(&format!("error getting results: {:?}", e))), 
-//   }
-// }
+  let working_dir = WorkingDir::new(&args.schema_dir);
+  let target_dir = TargetDir::new(&args.output_dir);
+
+  walk_tree2(
+    working_dir, 
+    target_dir
+  ).await
+}
 
 async fn walk_tree2(working_dir: WorkingDir, target_dir: TargetDir) -> R<()> {
   let args_results: R<Vec<_>> =
@@ -188,7 +169,7 @@ async fn decompile_class(scalap_args: ScalapArguments) -> R<()> {
 
   println!("{} {}", result, dotted_scala_file.clone());
 
-    Ok(())
+  Ok(())
 }
 
 fn is_valid_file(entry: &DirEntry) -> bool {
