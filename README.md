@@ -1,6 +1,6 @@
 # Reveal
 
-Converts scala class files into the matching scala source files by running them through `scalap`.
+Converts scala class files into the matching scala source files by running them through `scalap`. `scalap` is only available in scala 2.x. Ensure that `scalap` is on the path.
 
 ## Usage
 
